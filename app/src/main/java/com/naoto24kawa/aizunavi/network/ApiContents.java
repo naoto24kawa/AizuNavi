@@ -1,6 +1,10 @@
 package com.naoto24kawa.aizunavi.network;
 
 public class ApiContents {
+    // InitialSetting N2TTS導入用
+    public static final String GOOGLEPLAY_BASE_URI = "market://details?id=";
+    public static final String N2TTS_PACKAGE_NAME = "jp.kddilabs.n2tts";
+
     // VOLLEY methods
     public static final int HTTP_GET = 0;
     public static final int HTTP_POST = 1;
@@ -15,7 +19,7 @@ public class ApiContents {
     /**
      * エコろん号バス停位置データ
      * 参照URL
-     * http://www.data4citizen.jp/app/users/openDataOutput/show/get/O_ECORON_BUS_STOP
+     * http://www.data4citizen.jp/app/users/openDataTop/show/O_ECORON_BUS_STOP
      */
     public static final String ECORON_BUS_STOP_DATA = "http://www.data4citizen.jp/app/users/openDataOutput/json/get/O_ECORON_BUS_STOP";
     /**
