@@ -2,6 +2,7 @@ package com.naoto24kawa.aizunavi.activities;
 
 import android.location.Location;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 
@@ -15,15 +16,26 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
 import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
 
+import com.google.android.gms.maps.model.MarkerOptions;
 import com.naoto24kawa.aizunavi.R;
+import com.naoto24kawa.aizunavi.entities.BusStop;
+import com.naoto24kawa.aizunavi.entities.HistricSpot;
+import com.naoto24kawa.aizunavi.entities.Spot;
 import com.naoto24kawa.aizunavi.network.ApiContents;
 import com.naoto24kawa.aizunavi.network.AppController;
+
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import com.android.volley.Response;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -49,6 +61,12 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
     private GoogleMap mMap;
     private FusedLocationProviderApi fusedLocationProviderApi = LocationServices.FusedLocationApi;
     private Location location;
+    private List<BusStop> busStopList;
+    private List<Spot> spotList;
+
+    // tts
+    private TextToSpeech tts;
+    private HashMap<String, String> ttsMap = new HashMap();
 
 /***************************************************************************************************
 **** Activity Cycles *******************************************************************************
@@ -69,7 +87,9 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
         initialize();
 
         // Map Maker initialize
-        getSpotMarkers();
+        // TODO:要動作確認 nishikawa_naoto 2015/11/03
+        getPositionDatas();
+        initMapMarkers();
     }
 
     @Override
@@ -181,21 +201,169 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                         .build()));
     }
 
+    private void initMapMarkers() {
+        // バス停設置
+        for (BusStop busStop : busStopList) {
+            // 名前確認
+            String name;
+            if (!busStop.getBusStopKanji().isEmpty()) {
+                name = busStop.getBusStopKanji();
+            } else {
+                name = busStop.getBusStopKana();
+            }
+
+            mMap.addMarker(new MarkerOptions()
+                    .position(busStop.getLatLng())
+                    .title(name)
+                    .icon(BitmapDescriptorFactory
+                            .defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
+        }
+
+        // 施設設置
+        for (Spot spot : spotList) {
+            // 名前確認
+            String name;
+            if (!spot.getSpotKanji().isEmpty()) {
+                name = spot.getSpotKanji();
+            } else {
+                name = spot.getSpotKana();
+            }
+
+            mMap.addMarker(new MarkerOptions()
+                    .position(spot.getLatLng())
+                    .title(name)
+                    .icon(BitmapDescriptorFactory
+                            .defaultMarker(BitmapDescriptorFactory.HUE_GREEN)));
+        }
+    }
+
     /**
      * HTTP通信を行い必要なマーカーを用意する
      */
-    public void getSpotMarkers() {
+    public void getPositionDatas() {
+        // TODO:別スレッドで行うことを検討する nishikawa_naoto 2015/11/03
         Log.d(TAG, "getSpotMarkers");
+
         // 会津バスバス停位置データ取得
         AppController.http(ApiContents.HTTP_GET, ApiContents.AIZUBUS_BUS_STOP_DATA, null,
                 new Response.Listener<JSONObject>() {
                     @Override
                     public void onResponse(JSONObject response) {
-                        // TODO:仮の処理です nisihikawa_naoto 2015/10/30
                         Log.d("VOLLEY.onResponse", response.toString());
+
+                        try {
+                            int size = (int) response.get("count");
+                            JSONArray dataArray = response.getJSONArray("data");
+                            for (int i = 0; i < size; i++) {
+                                JSONObject data = dataArray.getJSONObject(i);
+                                String busStopNameKanji = (String) data.get("bus_stop_name_kanji");
+                                String busStopNameKana = (String) data.get("bus_stop_name_kana");
+                                double lat = (double) data.get("lat");
+                                double lng = (double) data.get("lng");
+                                BusStop busStop = new BusStop(busStopNameKanji, busStopNameKana, lat, lng);
+                                busStopList.add(busStop);
+                            }
+                        } catch (JSONException e) {
+                            // TODO:失敗時の処理を決める nishikawa_naoto 2015/11/03
+                            e.printStackTrace();
+                        }
+                    }
+                });
+
+        // エコろん号バス停位置データ取得
+        AppController.http(ApiContents.HTTP_GET, ApiContents.ECORON_BUS_STOP_DATA, null,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        Log.d("VOLLEY.onResponse", response.toString());
+
+                        try {
+                            int size = (int) response.get("count");
+                            JSONArray dataArray = response.getJSONArray("data");
+                            for (int i = 0; i < size; i++) {
+                                JSONObject data = dataArray.getJSONObject(i);
+                                String busStopNameKanji = (String) data.get("bus_stop_name");
+                                String busStopNameKana = (String) data.get("bus_stop_name_kana");
+                                double lat = (double) data.get("lat");
+                                double lng = (double) data.get("lng");
+                                BusStop busStop = new BusStop(busStopNameKanji, busStopNameKana, lat, lng);
+                                busStopList.add(busStop);
+                            }
+                        } catch (JSONException e) {
+                            // TODO:失敗時の処理を決める nishikawa_naoto 2015/11/03
+                            e.printStackTrace();
+                        }
+                    }
+                });
+
+        // 会津若松市公共施設位置データ取得
+        AppController.http(ApiContents.HTTP_GET, ApiContents.AIZUWAKAMATSU_SPOT_DATA, null,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        Log.d("VOLLEY.onResponse", response.toString());
+
+                        try {
+                            int size = (int) response.get("count");
+                            JSONArray dataArray = response.getJSONArray("data");
+                            for (int i = 0; i < size; i++) {
+                                JSONObject data = dataArray.getJSONObject(i);
+                                String spotNameKanji = (String) data.get("name");
+                                double lat = (double) data.get("Latitude");
+                                double lng = (double) data.get("Longitude");
+                                Spot spot = new Spot(spotNameKanji, null, lat, lng);
+                                spotList.add(spot);
+                            }
+                        } catch (JSONException e) {
+                            // TODO:失敗時の処理を決める nishikawa_naoto 2015/11/03
+                            e.printStackTrace();
+                        }
+                    }
+                });
+
+        // 会津若松市観光史跡位置データ取得
+        AppController.http(ApiContents.HTTP_GET, ApiContents.AIZUWAKAMATSU_HISTRIC_SPOT_DATA, null,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        Log.d("VOLLEY.onResponse", response.toString());
+
+                        try {
+                            int size = (int) response.get("count");
+                            JSONArray dataArray = response.getJSONArray("data");
+                            for (int i = 0; i < size; i++) {
+                                JSONObject data = dataArray.getJSONObject(i);
+                                String spotNameKanji = (String) data.get("name");
+                                String spotNameKana = (String) data.get("name_kana");
+                                double lat = (double) data.get("lat");
+                                double lng = (double) data.get("lng");
+                                String description = (String) data.get("description");
+                                HistricSpot spot = new HistricSpot(spotNameKanji, spotNameKana, lat, lng ,description);
+                                spotList.add(spot);
+                            }
+                        } catch (JSONException e) {
+                            // TODO:失敗時の処理を決める nishikawa_naoto 2015/11/03
+                            e.printStackTrace();
+                        }
                     }
                 });
     }
+
+/***************************************************************************************************
+****** TextToSpeech ********************************************************************************
+***************************************************************************************************/
+
+    private TextToSpeech.OnInitListener onInitListener = new TextToSpeech.OnInitListener() {
+        @Override
+        public void onInit(int status) {
+            if (TextToSpeech.SUCCESS == status) {
+                Log.d(TAG, "TTS is initialized");
+                tts.speak("あいずなびへようこそ",
+                        TextToSpeech.QUEUE_FLUSH,
+                        ttsMap);
+            }
+        }
+    };
 
 /***************************************************************************************************
 **** Another Methods *******************************************************************************
@@ -206,6 +374,10 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
      */
     private void initialize() {
         Log.d(TAG, "initialize");
+        // list initialize
+        busStopList = new ArrayList();
+        spotList = new ArrayList();
+
         // locationRequest
         locationRequest = LocationRequest.create();
         locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
@@ -218,5 +390,9 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                 .addConnectionCallbacks(this)
                 .addOnConnectionFailedListener(this)
                 .build();
+
+        // tts
+        ttsMap.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, null);
+        tts = new TextToSpeech(this, onInitListener);
     }
 }

@@ -1,4 +1,4 @@
-package interfaces;
+package com.naoto24kawa.aizunavi.interfaces;
 
 public abstract class BaseModel {
 

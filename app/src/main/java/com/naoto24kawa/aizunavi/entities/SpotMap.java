@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import interfaces.BaseModel;
+import com.naoto24kawa.aizunavi.interfaces.BaseModel;
 
 public class SpotMap extends BaseModel {
 

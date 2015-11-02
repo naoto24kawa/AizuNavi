@@ -1,6 +1,7 @@
 package com.naoto24kawa.aizunavi.entities;
 
-import interfaces.BaseModel;
+import com.google.android.gms.maps.model.LatLng;
+import com.naoto24kawa.aizunavi.interfaces.BaseModel;
 
 /**
  * バス停モデル
@@ -43,6 +44,14 @@ public class BusStop extends BaseModel {
         this.busStopKana = kana;
         this.lat = lat;
         this.lng = lng;
+    }
+
+    /**
+     * 緯度経度を取得します
+     * @return 緯度経度
+     */
+    public LatLng getLatLng() {
+        return new LatLng(this.lat, this.lng);
     }
 
     /**
