@@ -2,6 +2,14 @@ package com.naoto24kawa.aizunavi.entities;
 
 public class HistricSpot extends Spot {
 
+    private String name;
+
+    private String name_kana;
+
+    private double lat;
+
+    private double lng;
+
     /** 施設概要 */
     private String description;
 

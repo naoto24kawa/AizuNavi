@@ -1,11 +1,64 @@
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
+<RelativeLayout
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:id="@+id/relative_layout"
+    xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <fragment
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:name="com.google.android.gms.maps.MapFragment"
-        android:id="@+id/map_fragment" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center_vertical"
+            android:background="@color/primary_indigo"
+            android:text="@string/app_name"
+            android:textColor="@android:color/primary_text_dark"
+            android:paddingLeft="12dp"
+            android:id="@+id/textView" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@+id/textView"
+            android:background="@color/secondray_indigo"
+            android:id="@+id/frame">
+
+            <fragment
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_margin="4dp"
+                android:name="com.google.android.gms.maps.MapFragment"
+                android:id="@+id/map_fragment" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_gravity="bottom"
+                android:visibility="gone"
+                android:id="@+id/action_buttons">
+
+                <Button
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@color/primary_indigo"
+                    android:text="@string/get_description"
+                    android:textSize="20sp"
+                    android:textColor="@android:color/primary_text_dark"
+                    android:visibility="gone"
+                    android:padding="12dp"
+                    android:elevation="4dp"
+                    android:id="@+id/description_button" />
+
+                <Button
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@color/primary_indigo"
+                    android:text="@string/set_dest"
+                    android:textSize="20sp"
+                    android:textColor="@android:color/primary_text_dark"
+                    android:visibility="gone"
+                    android:padding="12dp"
+                    android:elevation="4dp"
+                    android:id="@+id/destination_button" />
+            </LinearLayout>
+        </FrameLayout>
 </RelativeLayout>

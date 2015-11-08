@@ -3,4 +3,17 @@
 
     <string name="hello_world">Hello world!</string>
     <string name="action_settings">Settings</string>
+
+    <string name="welcome">あいずなびに、ようこそ</string>
+
+    <string name="set_dest">経路を検索</string>
+    <string name="get_description">説明を聞く</string>
+
+    <string name="unable_current_location">現在位置が利用取得出来ません</string>
+
+    <string name="success_gps_service">位置情報サービスの接続に成功しました</string>
+    <string name="error_gps_service">位置情報サービスの接続に失敗しました</string>
+    <string name="suspended_gps_service">位置情報サービスの接続が切断されました</string>
+
+    <string name="error_tts">テキストの再生に失敗しました</string>
 </resources>

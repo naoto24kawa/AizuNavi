@@ -1,25 +1,43 @@
 package com.naoto24kawa.aizunavi.activities;
 
+import android.app.Activity;
+import android.content.Intent;
+import android.content.IntentSender;
 import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
-import android.support.v7.app.AppCompatActivity;
+import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
+import android.view.View;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.PendingResult;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.FusedLocationProviderApi;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.LocationSettingsRequest;
+import com.google.android.gms.location.LocationSettingsResult;
+import com.google.android.gms.location.LocationSettingsStatusCodes;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
 import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
 
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.naoto24kawa.aizunavi.R;
 import com.naoto24kawa.aizunavi.entities.BusStop;
@@ -36,11 +54,12 @@ import com.android.volley.Response;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 
-public class MapActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks,
+public class MapActivity extends Activity implements GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
         LocationListener,
         OnMapReadyCallback {
@@ -51,6 +70,8 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
 
     // set TAG contents
     private static final String TAG = MapActivity.class.getSimpleName();
+    private static final int REQUEST_LOCATION_SET = 0;
+
 
     // To need Initialize instance
     private GoogleApiClient mGoogleClient;
@@ -59,14 +80,27 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
     // instance of this activity
     private MapFragment mMapFragment;
     private GoogleMap mMap;
+    private Map<Marker, Spot> markerMap;
     private FusedLocationProviderApi fusedLocationProviderApi = LocationServices.FusedLocationApi;
     private Location location;
     private List<BusStop> busStopList;
     private List<Spot> spotList;
+    private HistricSpot descriptionSpot;
+
+    // layout parts
+    private LinearLayout buttons;
+    private Button destButton;
+    private Button descButton;
+    private Animation inAnim;
+    private Animation outAnim;
 
     // tts
     private TextToSpeech tts;
     private HashMap<String, String> ttsMap = new HashMap();
+    private static final int SPOT = 0;
+    private static final int BUS_STOP = 1;
+    private static final int DESCRIPTION = 2;
+    private static final int ETC = 3;
 
 /***************************************************************************************************
 **** Activity Cycles *******************************************************************************
@@ -79,17 +113,15 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
 
         // view initialize
         setContentView(R.layout.activity_map);
-        mMapFragment = (MapFragment) getFragmentManager().findFragmentById(R.id.map_fragment);
-        mMapFragment.getMapAsync(this);
-        mMap = mMapFragment.getMap();
+
+        // initialize view parts
+        viewInit();
 
         // instance initialize
         initialize();
 
         // Map Maker initialize
-        // TODO:要動作確認 nishikawa_naoto 2015/11/03
         getPositionDatas();
-        initMapMarkers();
     }
 
     @Override
@@ -122,6 +154,24 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
         }
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_LOCATION_SET) {
+            // ユーザのダイアログに対する応答をここで確認できる
+            switch (resultCode) {
+                case Activity.RESULT_OK : {
+                    Log.d(TAG, "Setting Success!");
+                    break;
+                }
+                case Activity.RESULT_CANCELED : {
+                    Log.e(TAG, "Setting Canceled!");
+                    Toast.makeText(this, R.string.unable_current_location, Toast.LENGTH_LONG).show();
+                    break;
+                }
+            }
+        }
+    }
+
 /***************************************************************************************************
 **** GoogleApiClients ******************************************************************************
 ***************************************************************************************************/
@@ -129,6 +179,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
     @Override
     public void onConnected(Bundle bundle) {
         Log.d(TAG, "onConnected");
+        Toast.makeText(this, R.string.success_gps_service, Toast.LENGTH_LONG).show();
 
         // 現在位置取得
         Location currentLocation = fusedLocationProviderApi.getLastLocation(mGoogleClient);
@@ -151,14 +202,55 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
     @Override
     public void onConnectionSuspended(int i) {
         Log.e(TAG, "onConnectionSuspended");
-        // locationServiceの接続が中断された場合
+        Toast.makeText(this, R.string.suspended_gps_service, Toast.LENGTH_LONG).show();
+        Toast.makeText(this, R.string.unable_current_location, Toast.LENGTH_LONG).show();
     }
 
     @Override
     public void onConnectionFailed(ConnectionResult connectionResult) {
-        Log.e(TAG, "onConnectionFailed");
-        // locationServiceの接続に失敗した場合
+        Log.e(TAG, "onConnectionFailed : " + connectionResult.getErrorMessage());
+        Toast.makeText(this, R.string.error_gps_service, Toast.LENGTH_LONG).show();
+        Toast.makeText(this, R.string.unable_current_location, Toast.LENGTH_LONG).show();
     }
+
+    /**
+     * ユーザーの位置情報利用設定を確認する
+     */
+    private void checkLocationPreference() {
+        // ユーザが必要な位置情報設定を満たしているか確認する
+        PendingResult result = LocationServices.SettingsApi.checkLocationSettings(
+                mGoogleClient,
+                new LocationSettingsRequest.Builder().addLocationRequest(locationRequest).build());
+        result.setResultCallback(new ResultCallback<LocationSettingsResult>() {
+            @Override
+            public void onResult(LocationSettingsResult locationSettingsResult) {
+                final Status status = locationSettingsResult.getStatus();
+                switch (status.getStatusCode()) {
+                    case LocationSettingsStatusCodes.SUCCESS: {
+                        fusedLocationProviderApi.requestLocationUpdates(mGoogleClient, locationRequest, MapActivity.this);
+                        break;
+                    }
+
+                    case LocationSettingsStatusCodes.RESOLUTION_REQUIRED: {
+                        try {
+                            // ユーザに位置情報設定を変更してもらうためのダイアログを表示する
+                            status.startResolutionForResult(MapActivity.this, REQUEST_LOCATION_SET);
+                        } catch (IntentSender.SendIntentException e) {
+                            e.printStackTrace();
+                        }
+                        break;
+                    }
+
+                    case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE: {
+                        // 位置情報が取得できず、なおかつその状態からの復帰も難しい時呼ばれる
+                        Toast.makeText(MapActivity.this, R.string.unable_current_location, Toast.LENGTH_LONG).show();
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
 
 /***************************************************************************************************
 **** Map Performances ******************************************************************************
@@ -173,6 +265,11 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
     @Override
     public void onLocationChanged(Location location) {
         Log.d(TAG, "onLocationChanged");
+        // 現在位置表示の処理
+        if (this.location == null) {
+            animateCameraForTarget(mMap, location);
+        }
+        this.location = location;
     }
 
     /**
@@ -197,44 +294,9 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
         map.animateCamera(CameraUpdateFactory.newCameraPosition(
                 new CameraPosition.Builder()
                         .target(new LatLng(target.getLatitude(), target.getLongitude()))
+                        // TODO: 表示倍率の修正 nishikawa_naoto 2015/11/06
                         .zoom(18.0f)
                         .build()));
-    }
-
-    private void initMapMarkers() {
-        // バス停設置
-        for (BusStop busStop : busStopList) {
-            // 名前確認
-            String name;
-            if (!busStop.getBusStopKanji().isEmpty()) {
-                name = busStop.getBusStopKanji();
-            } else {
-                name = busStop.getBusStopKana();
-            }
-
-            mMap.addMarker(new MarkerOptions()
-                    .position(busStop.getLatLng())
-                    .title(name)
-                    .icon(BitmapDescriptorFactory
-                            .defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
-        }
-
-        // 施設設置
-        for (Spot spot : spotList) {
-            // 名前確認
-            String name;
-            if (!spot.getSpotKanji().isEmpty()) {
-                name = spot.getSpotKanji();
-            } else {
-                name = spot.getSpotKana();
-            }
-
-            mMap.addMarker(new MarkerOptions()
-                    .position(spot.getLatLng())
-                    .title(name)
-                    .icon(BitmapDescriptorFactory
-                            .defaultMarker(BitmapDescriptorFactory.HUE_GREEN)));
-        }
     }
 
     /**
@@ -245,7 +307,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
         Log.d(TAG, "getSpotMarkers");
 
         // 会津バスバス停位置データ取得
-        AppController.http(ApiContents.HTTP_GET, ApiContents.AIZUBUS_BUS_STOP_DATA, null,
+        AppController.http(this, ApiContents.HTTP_GET, ApiContents.AIZUBUS_BUS_STOP_DATA, null,
                 new Response.Listener<JSONObject>() {
                     @Override
                     public void onResponse(JSONObject response) {
@@ -261,6 +323,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                                 double lat = (double) data.get("lat");
                                 double lng = (double) data.get("lng");
                                 BusStop busStop = new BusStop(busStopNameKanji, busStopNameKana, lat, lng);
+                                createMapMarker(mMap, busStop);
                                 busStopList.add(busStop);
                             }
                         } catch (JSONException e) {
@@ -271,7 +334,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                 });
 
         // エコろん号バス停位置データ取得
-        AppController.http(ApiContents.HTTP_GET, ApiContents.ECORON_BUS_STOP_DATA, null,
+        AppController.http(this, ApiContents.HTTP_GET, ApiContents.ECORON_BUS_STOP_DATA, null,
                 new Response.Listener<JSONObject>() {
                     @Override
                     public void onResponse(JSONObject response) {
@@ -287,6 +350,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                                 double lat = (double) data.get("lat");
                                 double lng = (double) data.get("lng");
                                 BusStop busStop = new BusStop(busStopNameKanji, busStopNameKana, lat, lng);
+                                createMapMarker(mMap, busStop);
                                 busStopList.add(busStop);
                             }
                         } catch (JSONException e) {
@@ -297,7 +361,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                 });
 
         // 会津若松市公共施設位置データ取得
-        AppController.http(ApiContents.HTTP_GET, ApiContents.AIZUWAKAMATSU_SPOT_DATA, null,
+        AppController.http(this, ApiContents.HTTP_GET, ApiContents.AIZUWAKAMATSU_SPOT_DATA, null,
                 new Response.Listener<JSONObject>() {
                     @Override
                     public void onResponse(JSONObject response) {
@@ -312,6 +376,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                                 double lat = (double) data.get("Latitude");
                                 double lng = (double) data.get("Longitude");
                                 Spot spot = new Spot(spotNameKanji, null, lat, lng);
+                                createMapMarker(mMap, spot);
                                 spotList.add(spot);
                             }
                         } catch (JSONException e) {
@@ -322,7 +387,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                 });
 
         // 会津若松市観光史跡位置データ取得
-        AppController.http(ApiContents.HTTP_GET, ApiContents.AIZUWAKAMATSU_HISTRIC_SPOT_DATA, null,
+        AppController.http(this, ApiContents.HTTP_GET, ApiContents.AIZUWAKAMATSU_HISTRIC_SPOT_DATA, null,
                 new Response.Listener<JSONObject>() {
                     @Override
                     public void onResponse(JSONObject response) {
@@ -338,7 +403,8 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                                 double lat = (double) data.get("lat");
                                 double lng = (double) data.get("lng");
                                 String description = (String) data.get("description");
-                                HistricSpot spot = new HistricSpot(spotNameKanji, spotNameKana, lat, lng ,description);
+                                HistricSpot spot = new HistricSpot(spotNameKanji, spotNameKana, lat, lng, description);
+                                createMapMarker(mMap, spot);
                                 spotList.add(spot);
                             }
                         } catch (JSONException e) {
@@ -349,21 +415,185 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
                 });
     }
 
+    /**
+     * マーカーを追加する
+     * @param map GoogleMap
+     * @param spot 施設
+     */
+    private <T extends Spot>void createMapMarker(GoogleMap map, T spot) {
+        String name = spot.getKanji();
+        BitmapDescriptor icon;
+
+        // 名前設定
+        if (name == null || name.equals("")) {
+            name = spot.getKana();
+        }
+
+        // アイコン設定
+        if (spot instanceof HistricSpot) {
+            icon = BitmapDescriptorFactory.fromResource(R.drawable.histricalbuilding);
+        } else if (spot instanceof BusStop) {
+            icon = BitmapDescriptorFactory.fromResource(R.drawable.bus);
+        } else {
+            icon = BitmapDescriptorFactory.fromResource(R.drawable.building);
+        }
+
+        Marker marker = map.addMarker(new MarkerOptions()
+                            .position(spot.getLatLng())
+                            .title(name)
+                            .icon(icon));
+
+        // マーカー追加
+        markerMap.put(marker, spot);
+    }
+
+    /**
+     * OnMarkerClickListener
+     */
+    private GoogleMap.OnMarkerClickListener onMarkerClickListener = new GoogleMap.OnMarkerClickListener() {
+        @Override
+        public boolean onMarkerClick(Marker marker) {
+            Spot spot = markerMap.get(marker);
+
+            if (spot instanceof BusStop) {
+                speakTTS(marker.getTitle(), BUS_STOP);
+            } else {
+                speakTTS(marker.getTitle(), SPOT);
+            }
+
+            if (spot instanceof HistricSpot) {
+                descriptionSpot = (HistricSpot) spot;
+                viewController(true, true, true);
+            } else {
+                viewController(true, false, true);
+            }
+
+            return false;
+        }
+    };
+
+/***************************************************************************************************
+****** Button **************************************************************************************
+***************************************************************************************************/
+
+    /**
+     * OnDestButtonClickListener
+     */
+    private View.OnClickListener onDestButtonClickListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            viewController(false, false, false);
+
+            if (destButton.getVisibility() == View.VISIBLE) {
+                // TODO: 経路検索ロジックの実装 nishikawa_naoto 2015/11/09
+            }
+        }
+    };
+
+    /**
+     * OnDescButtonClickListener
+     */
+    private View.OnClickListener onDescButtonClickListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            viewController(false, false, false);
+
+            if (descButton.getVisibility() == View.VISIBLE) {
+                speakTTS(descriptionSpot.getDescription(), DESCRIPTION);
+            }
+        }
+    };
+
 /***************************************************************************************************
 ****** TextToSpeech ********************************************************************************
 ***************************************************************************************************/
 
-    private TextToSpeech.OnInitListener onInitListener = new TextToSpeech.OnInitListener() {
+    /**
+     * OnInitListener
+     */
+    private TextToSpeech.OnInitListener onTTSInitListener = new TextToSpeech.OnInitListener() {
         @Override
         public void onInit(int status) {
             if (TextToSpeech.SUCCESS == status) {
                 Log.d(TAG, "TTS is initialized");
-                tts.speak("あいずなびへようこそ",
-                        TextToSpeech.QUEUE_FLUSH,
-                        ttsMap);
+                speakTTS(getString(R.string.welcome), ETC);
             }
         }
     };
+
+    /**
+     * 文字を付加して文章を読み上げます
+     * @param message 文章
+     * @param type 種類
+     */
+    private void speakTTS(String message, int type) {
+        final String thisIs = "ここは、";
+        final String end = "、です。";
+        final String busStop = "バス停、";
+
+        switch (type) {
+            case SPOT : {
+//                message = thisIs + message + end;
+                break;
+            }
+            case BUS_STOP : {
+                message = busStop + message;
+                break;
+            }
+            case DESCRIPTION : {
+                break;
+            }
+            case ETC : {
+                break;
+            }
+        }
+
+        tts.speak(message, TextToSpeech.QUEUE_FLUSH, ttsMap);
+    }
+
+    /**
+     * 読み上げの始まりと終わりを取得する
+     */
+    private void setTTSListener(){
+        // android version more than 15th
+        if (Build.VERSION.SDK_INT >= 15) {
+            int listenerResult = tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onDone(String utteranceId) {
+                    Log.d(TAG, "progress on Done " + utteranceId);
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+                    Log.d(TAG, "progress on Error " + utteranceId);
+                    Toast.makeText(MapActivity.this, R.string.error_tts, Toast.LENGTH_LONG).show();
+                }
+
+                @Override
+                public void onStart(String utteranceId) {
+                    Log.d(TAG, "progress on Start " + utteranceId);
+                }
+
+            });
+
+            if (listenerResult != TextToSpeech.SUCCESS) {
+                Log.e(TAG, "failed to add utterance progress listener");
+            }
+        } else {
+            // less than 15th
+            int listenerResult = tts.setOnUtteranceCompletedListener(new TextToSpeech.OnUtteranceCompletedListener() {
+                @Override
+                public void onUtteranceCompleted(String utteranceId) {
+                    Log.d(TAG, "progress on Completed " + utteranceId);
+                }
+            });
+
+            if (listenerResult != TextToSpeech.SUCCESS) {
+                Log.e(TAG, "failed to add utterance completed listener");
+                Toast.makeText(this, R.string.error_tts, Toast.LENGTH_LONG).show();
+            }
+        }
+    }
 
 /***************************************************************************************************
 **** Another Methods *******************************************************************************
@@ -377,6 +607,7 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
         // list initialize
         busStopList = new ArrayList();
         spotList = new ArrayList();
+        markerMap = new HashMap<Marker, Spot>();
 
         // locationRequest
         locationRequest = LocationRequest.create();
@@ -393,6 +624,84 @@ public class MapActivity extends AppCompatActivity implements GoogleApiClient.Co
 
         // tts
         ttsMap.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, null);
-        tts = new TextToSpeech(this, onInitListener);
+        tts = new TextToSpeech(this, onTTSInitListener);
+        setTTSListener();
+
+        checkLocationPreference();
+    }
+
+    /**
+     * Viewの初期化処理
+     */
+    private void viewInit() {
+        mMapFragment = (MapFragment) getFragmentManager().findFragmentById(R.id.map_fragment);
+        mMapFragment.getMapAsync(this);
+        mMap = mMapFragment.getMap();
+        mMap.setOnMarkerClickListener(onMarkerClickListener);
+
+        buttons = (LinearLayout) findViewById(R.id.action_buttons);
+        destButton = (Button) findViewById(R.id.destination_button);
+        destButton.setOnClickListener(onDestButtonClickListener);
+        descButton = (Button) findViewById(R.id.description_button);
+        descButton.setOnClickListener(onDescButtonClickListener);
+        inAnim = AnimationUtils.loadAnimation(this, R.anim.in_from_under);
+        outAnim = AnimationUtils.loadAnimation(this, R.anim.disapper_to_under);
+    }
+
+    /**
+     * Viewの表示状態を操作します
+     * @param buttons 親View
+     * @param desc 子View
+     * @param dest 子View
+     */
+    private void viewController(boolean buttons, boolean desc, boolean dest) {
+        // 解説ボタンの表示設定
+        if (desc) {
+            if (this.buttons.getVisibility() == View.GONE) {
+                if (this.descButton.getVisibility() == View.GONE) {
+                    this.descButton.setVisibility(View.VISIBLE);
+                }
+            } else {
+                if (this.descButton.getVisibility() == View.GONE) {
+                    this.descButton.startAnimation(inAnim);
+                    this.descButton.setVisibility(View.VISIBLE);
+                }
+            }
+        } else {
+            if (this.buttons.getVisibility() == View.VISIBLE) {
+                if (this.descButton.getVisibility() == View.VISIBLE) {
+                    if (buttons) {
+                        this.descButton.startAnimation(outAnim);
+                        this.descButton.setVisibility(View.GONE);
+                    }
+                }
+            } else {
+                this.descButton.setVisibility(View.GONE);
+            }
+        }
+
+        // 経路検索ボタンの表示設定
+        if (dest) {
+            if (this.buttons.getVisibility() == View.GONE) {
+                if (this.destButton.getVisibility() == View.GONE) {
+                    this.destButton.setVisibility(View.VISIBLE);
+                }
+            }
+        } else {
+            if (this.buttons.getVisibility() == View.GONE) {
+                this.destButton.setVisibility(View.GONE);
+            }
+        }
+
+        // 親ボタンの表示設定
+        if (buttons) {
+            if (this.buttons.getVisibility() == View.GONE) {
+                this.buttons.startAnimation(inAnim);
+                this.buttons.setVisibility(View.VISIBLE);
+            }
+        } else {
+            this.buttons.startAnimation(outAnim);
+            this.buttons.setVisibility(View.GONE);
+        }
     }
 }
