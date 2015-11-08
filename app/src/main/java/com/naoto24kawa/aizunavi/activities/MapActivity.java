@@ -4,13 +4,17 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -50,6 +54,7 @@ import com.android.volley.Response;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -75,17 +80,27 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     // instance of this activity
     private MapFragment mMapFragment;
     private GoogleMap mMap;
+    private Map<Marker, Spot> markerMap;
     private FusedLocationProviderApi fusedLocationProviderApi = LocationServices.FusedLocationApi;
     private Location location;
     private List<BusStop> busStopList;
     private List<Spot> spotList;
-    private Button button;
+    private HistricSpot descriptionSpot;
+
+    // layout parts
+    private LinearLayout buttons;
+    private Button destButton;
+    private Button descButton;
     private Animation inAnim;
     private Animation outAnim;
 
     // tts
     private TextToSpeech tts;
     private HashMap<String, String> ttsMap = new HashMap();
+    private static final int SPOT = 0;
+    private static final int BUS_STOP = 1;
+    private static final int DESCRIPTION = 2;
+    private static final int ETC = 3;
 
 /***************************************************************************************************
 **** Activity Cycles *******************************************************************************
@@ -98,21 +113,14 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
 
         // view initialize
         setContentView(R.layout.activity_map);
-        mMapFragment = (MapFragment) getFragmentManager().findFragmentById(R.id.map_fragment);
-        mMapFragment.getMapAsync(this);
-        mMap = mMapFragment.getMap();
-        mMap.setOnMarkerClickListener(onMarkerClickListener);
 
-        button = (Button) findViewById(R.id.button);
-        button.setOnClickListener(onButtonClickListener);
-        inAnim = AnimationUtils.loadAnimation(this, R.anim.in_from_under);
-        outAnim = AnimationUtils.loadAnimation(this, R.anim.disapper_to_under);
+        // initialize view parts
+        viewInit();
 
         // instance initialize
         initialize();
 
         // Map Maker initialize
-        // TODO:要動作確認 nishikawa_naoto 2015/11/03
         getPositionDatas();
     }
 
@@ -148,17 +156,18 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        // TODO: 詳細を詰める
         if (requestCode == REQUEST_LOCATION_SET) {
             // ユーザのダイアログに対する応答をここで確認できる
             switch (resultCode) {
-                case Activity.RESULT_OK:
+                case Activity.RESULT_OK : {
                     Log.d(TAG, "Setting Success!");
                     break;
-                case Activity.RESULT_CANCELED:
+                }
+                case Activity.RESULT_CANCELED : {
                     Log.e(TAG, "Setting Canceled!");
-                    // TODO: 位置情報が使えない旨を伝える nishikawa_naoto 2015/11/06
+                    Toast.makeText(this, R.string.unable_current_location, Toast.LENGTH_LONG).show();
                     break;
+                }
             }
         }
     }
@@ -170,6 +179,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     @Override
     public void onConnected(Bundle bundle) {
         Log.d(TAG, "onConnected");
+        Toast.makeText(this, R.string.success_gps_service, Toast.LENGTH_LONG).show();
 
         // 現在位置取得
         Location currentLocation = fusedLocationProviderApi.getLastLocation(mGoogleClient);
@@ -192,20 +202,21 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     @Override
     public void onConnectionSuspended(int i) {
         Log.e(TAG, "onConnectionSuspended");
-        // locationServiceの接続が中断された場合
+        Toast.makeText(this, R.string.suspended_gps_service, Toast.LENGTH_LONG).show();
+        Toast.makeText(this, R.string.unable_current_location, Toast.LENGTH_LONG).show();
     }
 
     @Override
     public void onConnectionFailed(ConnectionResult connectionResult) {
-        Log.e(TAG, "onConnectionFailed");
-        // locationServiceの接続に失敗した場合
+        Log.e(TAG, "onConnectionFailed : " + connectionResult.getErrorMessage());
+        Toast.makeText(this, R.string.error_gps_service, Toast.LENGTH_LONG).show();
+        Toast.makeText(this, R.string.unable_current_location, Toast.LENGTH_LONG).show();
     }
 
     /**
      * ユーザーの位置情報利用設定を確認する
      */
     private void checkLocationPreference() {
-        // TODO: 詳細を詰める nishikawa_naoto 2015/11/05
         // ユーザが必要な位置情報設定を満たしているか確認する
         PendingResult result = LocationServices.SettingsApi.checkLocationSettings(
                 mGoogleClient,
@@ -215,10 +226,12 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
             public void onResult(LocationSettingsResult locationSettingsResult) {
                 final Status status = locationSettingsResult.getStatus();
                 switch (status.getStatusCode()) {
-                    case LocationSettingsStatusCodes.SUCCESS:
+                    case LocationSettingsStatusCodes.SUCCESS: {
                         fusedLocationProviderApi.requestLocationUpdates(mGoogleClient, locationRequest, MapActivity.this);
                         break;
-                    case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
+                    }
+
+                    case LocationSettingsStatusCodes.RESOLUTION_REQUIRED: {
                         try {
                             // ユーザに位置情報設定を変更してもらうためのダイアログを表示する
                             status.startResolutionForResult(MapActivity.this, REQUEST_LOCATION_SET);
@@ -226,10 +239,13 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
                             e.printStackTrace();
                         }
                         break;
-                    case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
-                        // 位置情報が取得できず、なおかつその状態からの復帰も難しい時呼ばれるらしい
-                        // TODO: 詳細を詰める nishikawa_naoto 2015/11/06
+                    }
+
+                    case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE: {
+                        // 位置情報が取得できず、なおかつその状態からの復帰も難しい時呼ばれる
+                        Toast.makeText(MapActivity.this, R.string.unable_current_location, Toast.LENGTH_LONG).show();
                         break;
+                    }
                 }
             }
         });
@@ -406,36 +422,29 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
      */
     private <T extends Spot>void createMapMarker(GoogleMap map, T spot) {
         String name = spot.getKanji();
-        if (name == null || name == "") {
+        BitmapDescriptor icon;
+
+        // 名前設定
+        if (name == null || name.equals("")) {
             name = spot.getKana();
         }
-        BitmapDescriptor buildingIcon = BitmapDescriptorFactory.fromResource(R.drawable.building);
-        BitmapDescriptor histricalBuildingIcon = BitmapDescriptorFactory.fromResource(R.drawable.histricalbuilding);
-        BitmapDescriptor busIcon = BitmapDescriptorFactory.fromResource(R.drawable.bus);
 
-        // TODO: instanceOf を追加して分岐させる、マーカーを変える nishikawa_naoto 2015/11/06
-//        map.addMarker(new MarkerOptions()
-//                .position(spot.getLatLng())
-//                .title(name)
-//                .icon(BitmapDescriptorFactory
-//                        .defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
-
+        // アイコン設定
         if (spot instanceof HistricSpot) {
-            map.addMarker(new MarkerOptions()
-                    .position(spot.getLatLng())
-                    .title(name)
-                    .icon(histricalBuildingIcon));
+            icon = BitmapDescriptorFactory.fromResource(R.drawable.histricalbuilding);
         } else if (spot instanceof BusStop) {
-            map.addMarker(new MarkerOptions()
-                    .position(spot.getLatLng())
-                    .title(name)
-                    .icon(busIcon));
+            icon = BitmapDescriptorFactory.fromResource(R.drawable.bus);
         } else {
-            map.addMarker(new MarkerOptions()
-                    .position(spot.getLatLng())
-                    .title(name)
-                    .icon(buildingIcon));
+            icon = BitmapDescriptorFactory.fromResource(R.drawable.building);
         }
+
+        Marker marker = map.addMarker(new MarkerOptions()
+                            .position(spot.getLatLng())
+                            .title(name)
+                            .icon(icon));
+
+        // マーカー追加
+        markerMap.put(marker, spot);
     }
 
     /**
@@ -444,12 +453,21 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     private GoogleMap.OnMarkerClickListener onMarkerClickListener = new GoogleMap.OnMarkerClickListener() {
         @Override
         public boolean onMarkerClick(Marker marker) {
-            tts.speak(marker.getTitle(), TextToSpeech.QUEUE_FLUSH, ttsMap);
-            // TODO: animation のテスト nishikawa_naoto 2015/11/06
-            if (button.getVisibility() == View.GONE) {
-                button.startAnimation(inAnim);
-                button.setVisibility(View.VISIBLE);
+            Spot spot = markerMap.get(marker);
+
+            if (spot instanceof BusStop) {
+                speakTTS(marker.getTitle(), BUS_STOP);
+            } else {
+                speakTTS(marker.getTitle(), SPOT);
             }
+
+            if (spot instanceof HistricSpot) {
+                descriptionSpot = (HistricSpot) spot;
+                viewController(true, true, true);
+            } else {
+                viewController(true, false, true);
+            }
+
             return false;
         }
     };
@@ -459,14 +477,29 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
 ***************************************************************************************************/
 
     /**
-     * OnButtonClickListener
+     * OnDestButtonClickListener
      */
-    private View.OnClickListener onButtonClickListener = new View.OnClickListener() {
+    private View.OnClickListener onDestButtonClickListener = new View.OnClickListener() {
         @Override
         public void onClick(View v) {
-            if (v.getVisibility() == View.VISIBLE) {
-                v.startAnimation(outAnim);
-                v.setVisibility(View.GONE);
+            viewController(false, false, false);
+
+            if (destButton.getVisibility() == View.VISIBLE) {
+                // TODO: 経路検索ロジックの実装 nishikawa_naoto 2015/11/09
+            }
+        }
+    };
+
+    /**
+     * OnDescButtonClickListener
+     */
+    private View.OnClickListener onDescButtonClickListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            viewController(false, false, false);
+
+            if (descButton.getVisibility() == View.VISIBLE) {
+                speakTTS(descriptionSpot.getDescription(), DESCRIPTION);
             }
         }
     };
@@ -483,12 +516,84 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         public void onInit(int status) {
             if (TextToSpeech.SUCCESS == status) {
                 Log.d(TAG, "TTS is initialized");
-                tts.speak("あいずなびえようこそ",
-                        TextToSpeech.QUEUE_FLUSH,
-                        ttsMap);
+                speakTTS(getString(R.string.welcome), ETC);
             }
         }
     };
+
+    /**
+     * 文字を付加して文章を読み上げます
+     * @param message 文章
+     * @param type 種類
+     */
+    private void speakTTS(String message, int type) {
+        final String thisIs = "ここは、";
+        final String end = "、です。";
+        final String busStop = "バス停、";
+
+        switch (type) {
+            case SPOT : {
+//                message = thisIs + message + end;
+                break;
+            }
+            case BUS_STOP : {
+                message = busStop + message;
+                break;
+            }
+            case DESCRIPTION : {
+                break;
+            }
+            case ETC : {
+                break;
+            }
+        }
+
+        tts.speak(message, TextToSpeech.QUEUE_FLUSH, ttsMap);
+    }
+
+    /**
+     * 読み上げの始まりと終わりを取得する
+     */
+    private void setTTSListener(){
+        // android version more than 15th
+        if (Build.VERSION.SDK_INT >= 15) {
+            int listenerResult = tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onDone(String utteranceId) {
+                    Log.d(TAG, "progress on Done " + utteranceId);
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+                    Log.d(TAG, "progress on Error " + utteranceId);
+                    Toast.makeText(MapActivity.this, R.string.error_tts, Toast.LENGTH_LONG).show();
+                }
+
+                @Override
+                public void onStart(String utteranceId) {
+                    Log.d(TAG, "progress on Start " + utteranceId);
+                }
+
+            });
+
+            if (listenerResult != TextToSpeech.SUCCESS) {
+                Log.e(TAG, "failed to add utterance progress listener");
+            }
+        } else {
+            // less than 15th
+            int listenerResult = tts.setOnUtteranceCompletedListener(new TextToSpeech.OnUtteranceCompletedListener() {
+                @Override
+                public void onUtteranceCompleted(String utteranceId) {
+                    Log.d(TAG, "progress on Completed " + utteranceId);
+                }
+            });
+
+            if (listenerResult != TextToSpeech.SUCCESS) {
+                Log.e(TAG, "failed to add utterance completed listener");
+                Toast.makeText(this, R.string.error_tts, Toast.LENGTH_LONG).show();
+            }
+        }
+    }
 
 /***************************************************************************************************
 **** Another Methods *******************************************************************************
@@ -502,6 +607,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         // list initialize
         busStopList = new ArrayList();
         spotList = new ArrayList();
+        markerMap = new HashMap<Marker, Spot>();
 
         // locationRequest
         locationRequest = LocationRequest.create();
@@ -519,7 +625,83 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         // tts
         ttsMap.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, null);
         tts = new TextToSpeech(this, onTTSInitListener);
+        setTTSListener();
 
         checkLocationPreference();
+    }
+
+    /**
+     * Viewの初期化処理
+     */
+    private void viewInit() {
+        mMapFragment = (MapFragment) getFragmentManager().findFragmentById(R.id.map_fragment);
+        mMapFragment.getMapAsync(this);
+        mMap = mMapFragment.getMap();
+        mMap.setOnMarkerClickListener(onMarkerClickListener);
+
+        buttons = (LinearLayout) findViewById(R.id.action_buttons);
+        destButton = (Button) findViewById(R.id.destination_button);
+        destButton.setOnClickListener(onDestButtonClickListener);
+        descButton = (Button) findViewById(R.id.description_button);
+        descButton.setOnClickListener(onDescButtonClickListener);
+        inAnim = AnimationUtils.loadAnimation(this, R.anim.in_from_under);
+        outAnim = AnimationUtils.loadAnimation(this, R.anim.disapper_to_under);
+    }
+
+    /**
+     * Viewの表示状態を操作します
+     * @param buttons 親View
+     * @param desc 子View
+     * @param dest 子View
+     */
+    private void viewController(boolean buttons, boolean desc, boolean dest) {
+        // 解説ボタンの表示設定
+        if (desc) {
+            if (this.buttons.getVisibility() == View.GONE) {
+                if (this.descButton.getVisibility() == View.GONE) {
+                    this.descButton.setVisibility(View.VISIBLE);
+                }
+            } else {
+                if (this.descButton.getVisibility() == View.GONE) {
+                    this.descButton.startAnimation(inAnim);
+                    this.descButton.setVisibility(View.VISIBLE);
+                }
+            }
+        } else {
+            if (this.buttons.getVisibility() == View.VISIBLE) {
+                if (this.descButton.getVisibility() == View.VISIBLE) {
+                    if (buttons) {
+                        this.descButton.startAnimation(outAnim);
+                        this.descButton.setVisibility(View.GONE);
+                    }
+                }
+            } else {
+                this.descButton.setVisibility(View.GONE);
+            }
+        }
+
+        // 経路検索ボタンの表示設定
+        if (dest) {
+            if (this.buttons.getVisibility() == View.GONE) {
+                if (this.destButton.getVisibility() == View.GONE) {
+                    this.destButton.setVisibility(View.VISIBLE);
+                }
+            }
+        } else {
+            if (this.buttons.getVisibility() == View.GONE) {
+                this.destButton.setVisibility(View.GONE);
+            }
+        }
+
+        // 親ボタンの表示設定
+        if (buttons) {
+            if (this.buttons.getVisibility() == View.GONE) {
+                this.buttons.startAnimation(inAnim);
+                this.buttons.setVisibility(View.VISIBLE);
+            }
+        } else {
+            this.buttons.startAnimation(outAnim);
+            this.buttons.setVisibility(View.GONE);
+        }
     }
 }
