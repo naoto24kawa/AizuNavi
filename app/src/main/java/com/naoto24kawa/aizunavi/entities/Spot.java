@@ -6,10 +6,10 @@ import com.naoto24kawa.aizunavi.interfaces.BaseModel;
 public class Spot extends BaseModel {
 
     /** 施設名（漢字） */
-    private String spotKanji;
+    private String kanji;
 
     /** 施設名（かな） */
-    private String spotKana;
+    private String kana;
 
     /** 緯度 */
     private double lat;
@@ -21,8 +21,8 @@ public class Spot extends BaseModel {
      * コンストラクタ
      */
     public Spot() {
-        this.spotKanji = "";
-        this.spotKana = "";
+        this.kanji = "";
+        this.kana = "";
         this.lat = 0;
         this.lng = 0;
     }
@@ -31,8 +31,8 @@ public class Spot extends BaseModel {
      * コンストラクタ
      */
     public Spot(String kanji, String kana, double lat, double lng) {
-        this.spotKanji = kanji;
-        this.spotKana = kana;
+        this.kanji = kanji;
+        this.kana = kana;
         this.lat = lat;
         this.lng = lng;
     }
@@ -49,32 +49,32 @@ public class Spot extends BaseModel {
      * 施設名（漢字）を設定する
      * @param kanji 施設名（漢字）
      */
-    public void setSpotKanji(String kanji) {
-        this.spotKanji = kanji;
+    public void setKanji(String kanji) {
+        this.kanji = kanji;
     }
 
     /**
      * 施設名（漢字）を取得する
      * @return 施設名（漢字）
      */
-    public String getSpotKanji() {
-        return this.spotKanji;
+    public String getKanji() {
+        return this.kanji;
     }
 
     /**
      * 施設名（かな）を設定する
      * @param kana 施設名（かな）
      */
-    public void setSpotKana(String kana) {
-        this.spotKana = kana;
+    public void setKana(String kana) {
+        this.kana = kana;
     }
 
     /**
      * 施設名（かな）を取得する
      * @return 施設名（かな）
      */
-    public String getSpotKana() {
-        return this.spotKana;
+    public String getKana() {
+        return this.kana;
     }
 
     /**
@@ -112,7 +112,7 @@ public class Spot extends BaseModel {
     @Override
     protected boolean isExist() {
         // バス停名が存在するか確認する
-        if (this.spotKanji.isEmpty() && this.spotKana.isEmpty()) {
+        if (this.kanji.isEmpty() && this.kana.isEmpty()) {
             return false;
         }
         // 緯度経度が存在するか確認する

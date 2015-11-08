@@ -28,6 +28,7 @@ public class InitialSettingActivity extends Activity {
             finish();
         }
 
+        // TODO: 提出するときには無いほうが良いのか？ nishikawa_naoto 2015/11/05
         // N2TTSがインストールされているか確認する
         if (!isInstalled(ApiContents.N2TTS_PACKAGE_NAME)) {
             // されていない場合はインストールさせる

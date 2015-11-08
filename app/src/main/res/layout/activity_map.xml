@@ -2,10 +2,24 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
-
-    <fragment
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:name="com.google.android.gms.maps.MapFragment"
-        android:id="@+id/map_fragment" />
+        android:layout_height="match_parent">
+        <fragment
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:name="com.google.android.gms.maps.MapFragment"
+            android:id="@+id/map_fragment" />
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="@color/primary_indigo"
+            android:text="@string/set_dest"
+            android:textColor="@android:color/primary_text_dark"
+            android:visibility="gone"
+            android:padding="12dp"
+            android:id="@+id/button" />
+    </FrameLayout>
+
 </RelativeLayout>
