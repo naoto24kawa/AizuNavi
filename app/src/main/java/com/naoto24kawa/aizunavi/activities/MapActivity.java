@@ -3,6 +3,7 @@ package com.naoto24kawa.aizunavi.activities;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.IntentSender;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.Build;
 import android.os.Bundle;
@@ -13,6 +14,7 @@ import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
@@ -39,10 +41,13 @@ import com.google.android.gms.maps.model.LatLng;
 
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.gson.Gson;
 import com.naoto24kawa.aizunavi.R;
 import com.naoto24kawa.aizunavi.entities.BusStop;
 import com.naoto24kawa.aizunavi.entities.HistricSpot;
+import com.naoto24kawa.aizunavi.entities.OriginalSpot;
 import com.naoto24kawa.aizunavi.entities.Spot;
+import com.naoto24kawa.aizunavi.models.Consts;
 import com.naoto24kawa.aizunavi.network.ApiContents;
 import com.naoto24kawa.aizunavi.network.AppController;
 
@@ -62,7 +67,9 @@ import java.util.concurrent.TimeUnit;
 public class MapActivity extends Activity implements GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
         LocationListener,
-        OnMapReadyCallback {
+        OnMapReadyCallback,
+        GoogleMap.OnCameraChangeListener,
+        GoogleMap.OnMapLongClickListener {
 
 /***************************************************************************************************
 **** Instances *************************************************************************************
@@ -72,6 +79,11 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     private static final String TAG = MapActivity.class.getSimpleName();
     private static final int REQUEST_LOCATION_SET = 0;
 
+    // Preference
+    private SharedPreferences sp;
+    private static final String SAVED_DATA = "saved_data";
+    private static final String JSON_DATA = "json_data";
+    private Map<Marker, Spot> savedSpotMap;
 
     // To need Initialize instance
     private GoogleApiClient mGoogleClient;
@@ -83,14 +95,20 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     private Map<Marker, Spot> markerMap;
     private FusedLocationProviderApi fusedLocationProviderApi = LocationServices.FusedLocationApi;
     private Location location;
+    private LatLng oldLatLng;
+    private boolean markerClickFlg = false;
     private List<BusStop> busStopList;
     private List<Spot> spotList;
     private HistricSpot descriptionSpot;
+    private Spot lastTapped = new Spot();
 
     // layout parts
     private LinearLayout buttons;
     private Button destButton;
     private Button descButton;
+    private ImageButton busButton;
+    private ImageButton histButton;
+    private ImageButton buildButton;
     private Animation inAnim;
     private Animation outAnim;
 
@@ -152,6 +170,10 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         if (mGoogleClient.isConnected()) {
             mGoogleClient.disconnect();
         }
+
+        // SharedPreferenceに登録したマーカーを保存する
+        Gson gson = new Gson();
+        sp.edit().putString(JSON_DATA, gson.toJson(savedSpotMap, HashMap.class).toString()).commit();
     }
 
     @Override
@@ -272,6 +294,21 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         this.location = location;
     }
 
+    @Override
+    public void onMapLongClick(LatLng latLng) {
+        // TODO: マーカー追加処理 nishikawa_naoto 2015/11/09
+        Spot spot = new Spot();
+        String title = "";
+
+        Marker marker = mMap.addMarker(new MarkerOptions()
+                            .position(latLng)
+                            .title(title)
+                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
+
+//        savedSpotMap.put(marker, spot);
+        markerMap.put(marker, spot);
+    }
+
     /**
      * 目的地にカメラを移動する
      * @param map マップ
@@ -281,7 +318,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         map.animateCamera(CameraUpdateFactory.newCameraPosition(
                 new CameraPosition.Builder()
                         .target(target)
-                        .zoom(18.0f)
+                        .zoom(9.0f)
                         .build()));
     }
 
@@ -294,8 +331,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         map.animateCamera(CameraUpdateFactory.newCameraPosition(
                 new CameraPosition.Builder()
                         .target(new LatLng(target.getLatitude(), target.getLongitude()))
-                        // TODO: 表示倍率の修正 nishikawa_naoto 2015/11/06
-                        .zoom(18.0f)
+                        .zoom(9.0f)
                         .build()));
     }
 
@@ -305,6 +341,19 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     public void getPositionDatas() {
         // TODO:別スレッドで行うことを検討する nishikawa_naoto 2015/11/03
         Log.d(TAG, "getSpotMarkers");
+
+        // Preferenceから保存された位置データ取得する
+        Gson gson = new Gson();
+        String json = sp.getString(JSON_DATA, null);
+        if (json != null && !json.equals("")) {
+            savedSpotMap = gson.fromJson(json, HashMap.class);
+            for (Marker marker : savedSpotMap.keySet()) {
+                mMap.addMarker(new MarkerOptions()
+                        .position(marker.getPosition())
+                        .title(marker.getTitle())
+                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
+            }
+        }
 
         // 会津バスバス停位置データ取得
         AppController.http(this, ApiContents.HTTP_GET, ApiContents.AIZUBUS_BUS_STOP_DATA, null,
@@ -453,12 +502,35 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     private GoogleMap.OnMarkerClickListener onMarkerClickListener = new GoogleMap.OnMarkerClickListener() {
         @Override
         public boolean onMarkerClick(Marker marker) {
+            markerClickFlg = true;
+
             Spot spot = markerMap.get(marker);
 
+            if (lastTapped.equals(spot)) {
+                if (spot instanceof OriginalSpot) {
+                    marker.remove();
+                    // TODO:削除処理を追加する 西川直登 2015/11/10
+//                savedSpotMap.remove(marker);
+                    markerMap.remove(marker);
+
+                    viewController(false, false, false);
+
+                    return false;
+                }
+            }
+
+            lastTapped = spot;
+
+
+            String message = spot.getKana();
+            if (message == null || message.equals("")) {
+                message = spot.getKanji();
+            }
+
             if (spot instanceof BusStop) {
-                speakTTS(marker.getTitle(), BUS_STOP);
+                speakTTS(message, BUS_STOP);
             } else {
-                speakTTS(marker.getTitle(), SPOT);
+                speakTTS(message, SPOT);
             }
 
             if (spot instanceof HistricSpot) {
@@ -471,6 +543,19 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
             return false;
         }
     };
+
+    @Override
+    public void onCameraChange(CameraPosition cameraPosition) {
+        if(oldLatLng != null){
+            LatLng newPos = cameraPosition.target;
+
+            if(!oldLatLng.equals(newPos) && !markerClickFlg){
+                viewController(false, false, false);
+            }
+        }
+        oldLatLng = cameraPosition.target;
+        markerClickFlg = false;
+    }
 
 /***************************************************************************************************
 ****** Button **************************************************************************************
@@ -500,6 +585,61 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
 
             if (descButton.getVisibility() == View.VISIBLE) {
                 speakTTS(descriptionSpot.getDescription(), DESCRIPTION);
+            }
+        }
+    };
+
+    /**
+     * onBusButtonClickListener
+     */
+    private View.OnClickListener onBusButtonClickListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            for (Marker marker : markerMap.keySet()) {
+                if (markerMap.get(marker).getClass().equals(BusStop.class)) {
+                    if (marker.isVisible()) {
+                        marker.setVisible(false);
+                    } else {
+                        marker.setVisible(true);
+                    }
+                }
+            }
+        }
+    };
+
+    /**
+     * onHistButtonClickListener
+     */
+    private View.OnClickListener onHistButtonClickListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            for (Marker marker : markerMap.keySet()) {
+                if (markerMap.get(marker).getClass().equals(HistricSpot.class)) {
+                    if (marker.isVisible()) {
+                        marker.setVisible(false);
+                    } else {
+                        marker.setVisible(true);
+                    }
+                }
+            }
+        }
+    };
+
+    /**
+     * onBuildButtonClickListener
+     */
+    private View.OnClickListener onBuildButtonClickListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            for (Marker marker : markerMap.keySet()) {
+                if (!markerMap.get(marker).getClass().equals(BusStop.class) &&
+                        !markerMap.get(marker).getClass().equals(HistricSpot.class)) {
+                    if (marker.isVisible()) {
+                        marker.setVisible(false);
+                    } else {
+                        marker.setVisible(true);
+                    }
+                }
             }
         }
     };
@@ -604,6 +744,8 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
      */
     private void initialize() {
         Log.d(TAG, "initialize");
+        sp = getSharedPreferences(SAVED_DATA, MODE_PRIVATE);
+
         // list initialize
         busStopList = new ArrayList();
         spotList = new ArrayList();
@@ -638,12 +780,21 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         mMapFragment.getMapAsync(this);
         mMap = mMapFragment.getMap();
         mMap.setOnMarkerClickListener(onMarkerClickListener);
+        mMap.setOnMapLongClickListener(this);
+        mMap.setOnCameraChangeListener(this);
+        animateCameraForTarget(mMap, new LatLng(Consts.AIZUWAKAMATSU_LAT, Consts.AIZUWAKAMATSU_LNG));
 
         buttons = (LinearLayout) findViewById(R.id.action_buttons);
         destButton = (Button) findViewById(R.id.destination_button);
         destButton.setOnClickListener(onDestButtonClickListener);
         descButton = (Button) findViewById(R.id.description_button);
         descButton.setOnClickListener(onDescButtonClickListener);
+        busButton = (ImageButton) findViewById(R.id.bus_button);
+        busButton.setOnClickListener(onBusButtonClickListener);
+        histButton = (ImageButton) findViewById(R.id.hist_button);
+        histButton.setOnClickListener(onHistButtonClickListener);
+        buildButton = (ImageButton) findViewById(R.id.build_button);
+        buildButton.setOnClickListener(onBuildButtonClickListener);
         inAnim = AnimationUtils.loadAnimation(this, R.anim.in_from_under);
         outAnim = AnimationUtils.loadAnimation(this, R.anim.disapper_to_under);
     }
