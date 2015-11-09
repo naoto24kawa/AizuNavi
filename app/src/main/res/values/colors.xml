@@ -2,4 +2,9 @@
 <resources>
     <color name="primary_indigo">#3f51b5</color>
     <color name="secondray_indigo">#c5cae9</color>
+    <color name="dark_indigo">#303f9f</color>
+
+    <color name="primary_pink">#ff4081</color>
+    <color name="secondray_pink">#ff80ab</color>
+    <color name="dark_pink">#f50057</color>
 </resources>
