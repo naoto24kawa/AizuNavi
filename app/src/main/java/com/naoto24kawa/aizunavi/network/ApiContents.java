@@ -9,6 +9,9 @@ public class ApiContents {
     public static final int HTTP_GET = 0;
     public static final int HTTP_POST = 1;
 
+    // Google Direction API
+    public static final int TRAVEL_MODE_DRIVEING = 1;
+
     // URLs
     /**
      * 会津バスバス停位置データ
