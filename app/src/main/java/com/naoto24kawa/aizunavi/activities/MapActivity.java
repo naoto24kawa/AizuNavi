@@ -4,11 +4,15 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.location.Location;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.support.v4.app.FragmentActivity;
 import android.util.Log;
 import android.view.View;
 import android.view.animation.Animation;
@@ -41,12 +45,15 @@ import com.google.android.gms.maps.model.LatLng;
 
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.naoto24kawa.aizunavi.R;
 import com.naoto24kawa.aizunavi.entities.BusStop;
 import com.naoto24kawa.aizunavi.entities.HistricSpot;
 import com.naoto24kawa.aizunavi.entities.OriginalSpot;
 import com.naoto24kawa.aizunavi.entities.Spot;
+import com.naoto24kawa.aizunavi.fragments.CustomDialog;
 import com.naoto24kawa.aizunavi.models.Consts;
 import com.naoto24kawa.aizunavi.network.ApiContents;
 import com.naoto24kawa.aizunavi.network.AppController;
@@ -55,16 +62,18 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import com.android.volley.Response;
+import com.naoto24kawa.aizunavi.network.GoogleDirectionAPIPerser;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 
-public class MapActivity extends Activity implements GoogleApiClient.ConnectionCallbacks,
+public class MapActivity extends FragmentActivity implements GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
         LocationListener,
         OnMapReadyCallback,
@@ -99,7 +108,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     private boolean markerClickFlg = false;
     private List<BusStop> busStopList;
     private List<Spot> spotList;
-    private HistricSpot descriptionSpot;
+    private String descriptionMessage;
     private Spot lastTapped = new Spot();
 
     // layout parts
@@ -160,6 +169,10 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         if (mGoogleClient.isConnected()) {
             mGoogleClient.disconnect();
         }
+
+        // SharedPreferenceに登録したマーカーを保存する
+        Gson gson = new Gson();
+        sp.edit().putString(JSON_DATA, gson.toJson(savedSpotMap.values(), new TypeToken<List<OriginalSpot>>(){}.getType()).toString()).commit();
     }
 
     @Override
@@ -170,10 +183,6 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         if (mGoogleClient.isConnected()) {
             mGoogleClient.disconnect();
         }
-
-        // SharedPreferenceに登録したマーカーを保存する
-        Gson gson = new Gson();
-        sp.edit().putString(JSON_DATA, gson.toJson(savedSpotMap, HashMap.class).toString()).commit();
     }
 
     @Override
@@ -201,7 +210,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
     @Override
     public void onConnected(Bundle bundle) {
         Log.d(TAG, "onConnected");
-        Toast.makeText(this, R.string.success_gps_service, Toast.LENGTH_LONG).show();
+//        Toast.makeText(this, R.string.success_gps_service, Toast.LENGTH_LONG).show();
 
         // 現在位置取得
         Location currentLocation = fusedLocationProviderApi.getLastLocation(mGoogleClient);
@@ -296,8 +305,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
 
     @Override
     public void onMapLongClick(LatLng latLng) {
-        // TODO: マーカー追加処理 nishikawa_naoto 2015/11/09
-        Spot spot = new Spot();
+        OriginalSpot spot = new OriginalSpot("", "", latLng, "");
         String title = "";
 
         Marker marker = mMap.addMarker(new MarkerOptions()
@@ -305,7 +313,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
                             .title(title)
                             .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
 
-//        savedSpotMap.put(marker, spot);
+        savedSpotMap.put(marker, spot);
         markerMap.put(marker, spot);
     }
 
@@ -318,7 +326,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         map.animateCamera(CameraUpdateFactory.newCameraPosition(
                 new CameraPosition.Builder()
                         .target(target)
-                        .zoom(9.0f)
+                        .zoom(12.0f)
                         .build()));
     }
 
@@ -331,7 +339,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         map.animateCamera(CameraUpdateFactory.newCameraPosition(
                 new CameraPosition.Builder()
                         .target(new LatLng(target.getLatitude(), target.getLongitude()))
-                        .zoom(9.0f)
+                        .zoom(12.0f)
                         .build()));
     }
 
@@ -346,12 +354,13 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         Gson gson = new Gson();
         String json = sp.getString(JSON_DATA, null);
         if (json != null && !json.equals("")) {
-            savedSpotMap = gson.fromJson(json, HashMap.class);
-            for (Marker marker : savedSpotMap.keySet()) {
-                mMap.addMarker(new MarkerOptions()
-                        .position(marker.getPosition())
-                        .title(marker.getTitle())
+            for (OriginalSpot spot : (List<OriginalSpot>) gson.fromJson(json, new TypeToken<List<OriginalSpot>>(){}.getType())) {
+                Marker marker = mMap.addMarker(new MarkerOptions()
+                        .position(spot.getLatLng())
+                        .title(spot.getKanji())
                         .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
+                savedSpotMap.put(marker, spot);
+                markerMap.put(marker, spot);
             }
         }
 
@@ -376,7 +385,8 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
                                 busStopList.add(busStop);
                             }
                         } catch (JSONException e) {
-                            // TODO:失敗時の処理を決める nishikawa_naoto 2015/11/03
+//                            Toast.makeText(MapActivity.this, R.string.error_bus_stop, Toast.LENGTH_LONG).show();
+//                            Toast.makeText(MapActivity.this, R.string.reload, Toast.LENGTH_LONG).show();
                             e.printStackTrace();
                         }
                     }
@@ -403,7 +413,8 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
                                 busStopList.add(busStop);
                             }
                         } catch (JSONException e) {
-                            // TODO:失敗時の処理を決める nishikawa_naoto 2015/11/03
+//                            Toast.makeText(MapActivity.this, R.string.error_bus_stop, Toast.LENGTH_LONG).show();
+//                            Toast.makeText(MapActivity.this, R.string.reload, Toast.LENGTH_LONG).show();
                             e.printStackTrace();
                         }
                     }
@@ -429,7 +440,8 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
                                 spotList.add(spot);
                             }
                         } catch (JSONException e) {
-                            // TODO:失敗時の処理を決める nishikawa_naoto 2015/11/03
+//                            Toast.makeText(MapActivity.this, R.string.error_spot, Toast.LENGTH_LONG).show();
+//                            Toast.makeText(MapActivity.this, R.string.reload, Toast.LENGTH_LONG).show();
                             e.printStackTrace();
                         }
                     }
@@ -457,7 +469,8 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
                                 spotList.add(spot);
                             }
                         } catch (JSONException e) {
-                            // TODO:失敗時の処理を決める nishikawa_naoto 2015/11/03
+//                            Toast.makeText(MapActivity.this, R.string.error_histrical_spot, Toast.LENGTH_LONG).show();
+//                            Toast.makeText(MapActivity.this, R.string.reload, Toast.LENGTH_LONG).show();
                             e.printStackTrace();
                         }
                     }
@@ -504,37 +517,71 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         public boolean onMarkerClick(Marker marker) {
             markerClickFlg = true;
 
-            Spot spot = markerMap.get(marker);
+            final Marker tappedMarker = marker;
+            final Spot tappedSpot = markerMap.get(tappedMarker);
 
-            if (lastTapped.equals(spot)) {
-                if (spot instanceof OriginalSpot) {
-                    marker.remove();
-                    // TODO:削除処理を追加する 西川直登 2015/11/10
-//                savedSpotMap.remove(marker);
-                    markerMap.remove(marker);
+            if (lastTapped.equals(tappedSpot)) {
+                if (tappedSpot instanceof OriginalSpot) {
+                    if (buttons.getVisibility() == View.VISIBLE) {
+                        // TODO 別メソッドの切り出しを検討する 西川直登 2015/11/11
+                        /** -------------------------------------------------- */
+                        final CustomDialog dialog = new CustomDialog();
+                        dialog.setSpot((OriginalSpot) tappedSpot);
+                        dialog.setOnPositiveButtonClickListener(new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                tappedMarker.setTitle(dialog.getTitle());
+                                tappedSpot.setKanji(dialog.getTitle());
+                                ((OriginalSpot) tappedSpot).setDescription(dialog.getDesc());
 
-                    viewController(false, false, false);
+                                savedSpotMap.put(tappedMarker, (OriginalSpot) tappedSpot);
+                                markerMap.put(tappedMarker, tappedSpot);
 
-                    return false;
+                                dialog.onDismiss(dialog.getDialog());
+                            }
+                        });
+                        dialog.setOnNegativeButtonClickListener(new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                tappedMarker.remove();
+                                savedSpotMap.remove(tappedMarker);
+                                markerMap.remove(tappedMarker);
+
+                                dialog.onDismiss(dialog.getDialog());
+                            }
+                        });
+                        dialog.show(getSupportFragmentManager(), TAG);
+                        /** -------------------------------------------------- */
+
+                        viewController(false, false, false);
+
+                        return false;
+                    }
                 }
             }
 
-            lastTapped = spot;
+            lastTapped = tappedSpot;
 
 
-            String message = spot.getKana();
+            String message = "";
+            if (tappedSpot.getKana() == null || tappedSpot.getKana().equals("")) {
+                message = tappedSpot.getKana();
+            }
             if (message == null || message.equals("")) {
-                message = spot.getKanji();
+                message = tappedSpot.getKanji();
             }
 
-            if (spot instanceof BusStop) {
+            if (tappedSpot instanceof BusStop) {
                 speakTTS(message, BUS_STOP);
             } else {
                 speakTTS(message, SPOT);
             }
 
-            if (spot instanceof HistricSpot) {
-                descriptionSpot = (HistricSpot) spot;
+            if (tappedSpot instanceof HistricSpot) {
+                descriptionMessage = ((HistricSpot) tappedSpot).getDescription();
+                viewController(true, true, true);
+            } else  if (tappedSpot instanceof OriginalSpot) {
+                descriptionMessage = ((OriginalSpot) tappedSpot).getDescription();
                 viewController(true, true, true);
             } else {
                 viewController(true, false, true);
@@ -570,7 +617,40 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
             viewController(false, false, false);
 
             if (destButton.getVisibility() == View.VISIBLE) {
-                // TODO: 経路検索ロジックの実装 nishikawa_naoto 2015/11/09
+                try {
+                    // パッケージ名を指定してインストール状況を確認する
+                    PackageManager packageManager = MapActivity.this.getPackageManager();
+                    ApplicationInfo applicationInfo = packageManager.getApplicationInfo(
+                            "com.google.android.apps.maps",
+                            PackageManager.GET_META_DATA);
+                    if (applicationInfo != null) {
+                        // 標準のマップ起動
+                        startGooglaMap(location, lastTapped);
+                    } else {
+                        Toast.makeText(MapActivity.this, R.string.nothing_map, Toast.LENGTH_LONG).show();
+                    }
+                } catch (PackageManager.NameNotFoundException exception) {
+                    Toast.makeText(MapActivity.this, R.string.nothing_map, Toast.LENGTH_LONG).show();
+                }
+
+//                final GoogleDirectionAPIPerser googleDirectionAPIPerser = new GoogleDirectionAPIPerser();
+//                String Url = googleDirectionAPIPerser.createUrl(ApiContents.TRAVEL_MODE_DRIVEING, location, lastTapped);
+//                AppController.http(MapActivity.this, ApiContents.HTTP_GET, Url, null, new Response.Listener<JSONObject>() {
+//                    @Override
+//                    public void onResponse(JSONObject response) {
+//                        Log.d(TAG, response.toString());
+//
+//                        // 結果は取れるがおかしい 西川直登 2015/11/12
+//                        // 参考URL : http://foonyan.sakura.ne.jp/wisteriahill/gmap_androidapiv2II_memo5/index.html
+//                        List<LatLng> latLngList = googleDirectionAPIPerser.perse(response);
+//
+//                        PolylineOptions lineOptions = new PolylineOptions();
+//                        lineOptions.addAll(latLngList);
+//                        lineOptions.width(10);
+//                        lineOptions.color(R.color.secondray_indigo);
+//                        mMap.addPolyline(lineOptions);
+//                    }
+//                });
             }
         }
     };
@@ -584,7 +664,7 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
             viewController(false, false, false);
 
             if (descButton.getVisibility() == View.VISIBLE) {
-                speakTTS(descriptionSpot.getDescription(), DESCRIPTION);
+                speakTTS(descriptionMessage, DESCRIPTION);
             }
         }
     };
@@ -633,7 +713,8 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         public void onClick(View v) {
             for (Marker marker : markerMap.keySet()) {
                 if (!markerMap.get(marker).getClass().equals(BusStop.class) &&
-                        !markerMap.get(marker).getClass().equals(HistricSpot.class)) {
+                        !markerMap.get(marker).getClass().equals(HistricSpot.class) &&
+                        !markerMap.get(marker).getClass().equals(OriginalSpot.class)) {
                     if (marker.isVisible()) {
                         marker.setVisible(false);
                     } else {
@@ -749,7 +830,8 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
         // list initialize
         busStopList = new ArrayList();
         spotList = new ArrayList();
-        markerMap = new HashMap<Marker, Spot>();
+        markerMap = new HashMap<>();
+        savedSpotMap = new HashMap<>();
 
         // locationRequest
         locationRequest = LocationRequest.create();
@@ -854,5 +936,13 @@ public class MapActivity extends Activity implements GoogleApiClient.ConnectionC
             this.buttons.startAnimation(outAnim);
             this.buttons.setVisibility(View.GONE);
         }
+    }
+
+    private void startGooglaMap(Location origin, Spot destinstion) {
+        Intent intent = new Intent();
+        intent.setAction(Intent.ACTION_VIEW);
+        intent.setClassName("com.google.android.apps.maps","com.google.android.maps.MapsActivity");
+        intent.setData(Uri.parse("http://maps.google.com/maps?saddr=" + Double.toString(origin.getLatitude()) + "," + Double.toString(origin.getLongitude()) + "&daddr=" + Double.toString(destinstion.getLat()) + "," + Double.toString(destinstion.getLng())));
+        startActivity(intent);
     }
 }
